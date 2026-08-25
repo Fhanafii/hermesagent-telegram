@@ -34,6 +34,11 @@ TOOL_POLICIES = {
         "requires_confirmation": False,
     },
 
+    "get_error_log": {
+        "risk": RiskLevel.LOW,
+        "requires_confirmation": False,
+    },
+
     "start_container": {
         "risk": RiskLevel.HIGH,
         "requires_confirmation": True,
