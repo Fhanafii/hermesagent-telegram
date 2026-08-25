@@ -12,6 +12,8 @@ from tools.docker import (
     restart_container,
 )
 
+from tools.log import get_error_log
+
 from tools.schema import TOOL_SCHEMAS
 
 from security.policy import get_tool_policy
@@ -23,6 +25,7 @@ TOOLS = {
     "get_disk": get_disk,
     "get_docker_containers": get_containers,
     "get_container_logs": get_container_logs,
+    "get_error_log": get_error_log,
 
     "start_container": start_container,
     "stop_container": stop_container,
