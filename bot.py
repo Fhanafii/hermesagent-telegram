@@ -2,6 +2,9 @@ import os
 
 from security.auth import is_authorized
 from telegram import Update
+from security.confirmation import ConfirmationManager
+from security.gate import SecurityGate
+from telegram.ext import CallbackQueryHandler
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -21,6 +24,13 @@ from tools.docker import (
     get_container_logs,
 )
 
+from telegram import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+)
+
+security_gate = SecurityGate()
+confirmation_manager = ConfirmationManager()
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
@@ -235,6 +245,66 @@ async def docker(
     )
 
 
+async def restart(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    user = update.effective_user
+
+    if not user or not is_authorized(user.id):
+        await unauthorized(update)
+        return
+
+    if not context.args:
+        await update.message.reply_text(
+            "Gunakan:\n"
+            "`/restart <container>`",
+            parse_mode="Markdown",
+        )
+        return
+
+    container = context.args[0]
+
+    check = security_gate.check(
+        "restart_container",
+        {
+            "container": container,
+        },
+    )
+
+    if not check["allowed"]:
+        if check["requires_confirmation"]:
+            await request_confirmation(
+                update,
+                "restart_container",
+                {
+                    "container": container,
+                },
+            )
+            return
+
+        await update.message.reply_text(
+            f"⛔ {check['reason']}"
+        )
+        return
+
+    result = security_gate.execute(
+        "restart_container",
+        {
+            "container": container,
+        },
+    )
+
+    if result["success"]:
+        await update.message.reply_text(
+            "✅ Container berhasil direstart."
+        )
+    else:
+        await update.message.reply_text(
+            f"❌ Gagal restart container:\n"
+            f"`{result}`",
+            parse_mode="Markdown",
+        )
 # ============================================================
 # /logs
 # ============================================================
@@ -281,6 +351,146 @@ async def logs(
     )
 
 # ============================================================
+# Request Confirmation
+# ============================================================
+async def request_confirmation(
+    update: Update,
+    tool_name: str,
+    arguments: dict,
+):
+    user = update.effective_user
+
+    if not user:
+        return
+
+    token = confirmation_manager.create(
+        user_id=user.id,
+        tool_name=tool_name,
+        arguments=arguments,
+    )
+
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                "✅ Confirm",
+                callback_data=f"confirm:{token}",
+            ),
+            InlineKeyboardButton(
+                "❌ Cancel",
+                callback_data=f"cancel:{token}",
+            ),
+        ]
+    ]
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    container = arguments.get(
+        "container",
+        "-"
+    )
+
+    await update.message.reply_text(
+        "⚠️ *Confirmation Required*\n\n"
+        f"Tool: `{tool_name}`\n"
+        f"Container: `{container}`\n"
+        "Risk: `HIGH`\n\n"
+        "Apakah kamu yakin ingin menjalankan "
+        "operasi ini?",
+        parse_mode="Markdown",
+        reply_markup=reply_markup,
+    )
+
+
+async def confirmation_callback(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    query = update.callback_query
+
+    if not query:
+        return
+
+    await query.answer()
+
+    user = query.from_user
+
+    if not is_authorized(user.id):
+        await query.edit_message_text(
+            "⛔ Kamu tidak memiliki akses."
+        )
+        return
+
+    data = query.data or ""
+
+    if ":" not in data:
+        await query.edit_message_text(
+            "❌ Confirmation tidak valid."
+        )
+        return
+
+    action, token = data.split(":", 1)
+
+    request = confirmation_manager.get(token)
+
+    if request is None:
+        await query.edit_message_text(
+            "⌛ Confirmation sudah kadaluarsa."
+        )
+        return
+
+    # Pastikan token memang milik user yang menekan tombol.
+    if request["user_id"] != user.id:
+        await query.edit_message_text(
+            "⛔ Confirmation ini bukan milik kamu."
+        )
+        return
+
+    if action == "cancel":
+        confirmation_manager.cancel(token)
+
+        await query.edit_message_text(
+            "❌ Operasi dibatalkan."
+        )
+        return
+
+    if action != "confirm":
+        await query.edit_message_text(
+            "❌ Action tidak valid."
+        )
+        return
+
+    request = confirmation_manager.consume(token)
+
+    if request is None:
+        await query.edit_message_text(
+            "⌛ Confirmation sudah kadaluarsa."
+        )
+        return
+
+    result = security_gate.execute(
+        request["tool"],
+        request["arguments"],
+    )
+
+    if result["success"]:
+        await query.edit_message_text(
+            "✅ Operasi berhasil dijalankan."
+        )
+    else:
+        error = (
+            result.get("result", {}).get(
+                "error",
+                "Unknown error",
+            )
+        )
+
+        await query.edit_message_text(
+            f"❌ Operasi gagal.\n\n"
+            f"`{error[:3000]}`",
+            parse_mode="Markdown",
+        )
+
+# ============================================================
 # MAIN
 # ============================================================
 
@@ -320,6 +530,17 @@ def main():
         CommandHandler("logs", logs)
     )
 
+    application.add_handler(
+        CallbackQueryHandler(
+            confirmation_callback,
+            pattern=r"^(confirm|cancel):",
+        )
+    )
+
+    application.add_handler(
+        CommandHandler("restart", restart)
+    )
+    
     print("Hermes Telegram Bot started.")
 
     application.run_polling()
