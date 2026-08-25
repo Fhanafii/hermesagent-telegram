@@ -1,10 +1,27 @@
+def get_gemini_function_declarations():
+    declarations = []
+
+    for name, schema in TOOL_SCHEMAS.items():
+        declarations.append(
+            {
+                "name": name,
+                "description": schema["description"],
+                "parameters": schema["parameters"],
+            }
+        )
+
+    return declarations
+
 TOOL_SCHEMAS = {
     "get_server_status": {
         "description": (
             "Mendapatkan status server saat ini, "
             "termasuk CPU, RAM, disk, dan uptime."
         ),
-        "parameters": {},
+        "parameters": {
+            "type": "object",
+            "properties": {},
+        },
     },
 
     "get_memory": {
@@ -12,14 +29,20 @@ TOOL_SCHEMAS = {
             "Mendapatkan penggunaan RAM dan swap "
             "server saat ini."
         ),
-        "parameters": {},
+        "parameters": {
+            "type": "object",
+            "properties": {},
+        },
     },
 
     "get_disk": {
         "description": (
             "Mendapatkan penggunaan disk pada filesystem root."
         ),
-        "parameters": {},
+        "parameters": {
+            "type": "object",
+            "properties": {},
+        },
     },
 
     "get_docker_containers": {
@@ -27,7 +50,10 @@ TOOL_SCHEMAS = {
             "Mendapatkan daftar Docker container "
             "beserta status dan image-nya."
         ),
-        "parameters": {},
+        "parameters": {
+            "type": "object",
+            "properties": {},
+        },
     },
 
     "get_container_logs": {
@@ -36,21 +62,21 @@ TOOL_SCHEMAS = {
             "yang diizinkan."
         ),
         "parameters": {
-            "container": {
-                "type": "string",
-                "description": "Nama Docker container.",
+            "type": "object",
+            "properties": {
+                "container": {
+                    "type": "string",
+                    "description": "Nama Docker container.",
+                },
+                "lines": {
+                    "type": "integer",
+                    "description": (
+                        "Jumlah baris log yang ingin diambil."
+                    ),
+                },
             },
-            "lines": {
-                "type": "integer",
-                "description": (
-                    "Jumlah baris log yang ingin diambil. "
-                    "Default 30, maksimum 100."
-                ),
-            },
+            "required": ["container"],
         },
-        "required": [
-            "container",
-        ],
     },
 
     "start_container": {
@@ -58,14 +84,15 @@ TOOL_SCHEMAS = {
             "Menjalankan Docker container yang diizinkan."
         ),
         "parameters": {
-            "container": {
-                "type": "string",
-                "description": "Nama Docker container.",
+            "type": "object",
+            "properties": {
+                "container": {
+                    "type": "string",
+                    "description": "Nama Docker container.",
+                },
             },
+            "required": ["container"],
         },
-        "required": [
-            "container",
-        ],
     },
 
     "stop_container": {
@@ -73,14 +100,15 @@ TOOL_SCHEMAS = {
             "Menghentikan Docker container yang diizinkan."
         ),
         "parameters": {
-            "container": {
-                "type": "string",
-                "description": "Nama Docker container.",
+            "type": "object",
+            "properties": {
+                "container": {
+                    "type": "string",
+                    "description": "Nama Docker container.",
+                },
             },
+            "required": ["container"],
         },
-        "required": [
-            "container",
-        ],
     },
 
     "restart_container": {
@@ -88,13 +116,14 @@ TOOL_SCHEMAS = {
             "Merestart Docker container yang diizinkan."
         ),
         "parameters": {
-            "container": {
-                "type": "string",
-                "description": "Nama Docker container.",
+            "type": "object",
+            "properties": {
+                "container": {
+                    "type": "string",
+                    "description": "Nama Docker container.",
+                },
             },
+            "required": ["container"],
         },
-        "required": [
-            "container",
-        ],
     },
 }
