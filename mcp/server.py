@@ -1,4 +1,4 @@
-from mcp.server.fastmcp import FastMCP
+from mcp.server import MCPServer
 
 from tools.system import (
     get_status,
@@ -7,26 +7,46 @@ from tools.system import (
 )
 
 
-mcp = FastMCP("Hermes Sysadmin")
+server = MCPServer(
+    name="Hermes Sysadmin",
+    version="0.1.0",
+    instructions=(
+        "Read-only server monitoring tools for the Hermes sysadmin agent."
+    ),
+)
 
 
-@mcp.tool()
+@server.tool(
+    name="get_server_status",
+    description=(
+        "Get the current server status including CPU, RAM, disk usage, "
+        "and system uptime."
+    ),
+)
 def get_server_status():
-    """Get the current CPU, RAM, disk usage, and server uptime."""
     return get_status()
 
 
-@mcp.tool()
+@server.tool(
+    name="get_memory",
+    description=(
+        "Get current RAM and swap memory usage of the server."
+    ),
+)
 def get_memory():
-    """Get current RAM and swap memory usage."""
     return system_get_memory()
 
 
-@mcp.tool()
+@server.tool(
+    name="get_disk",
+    description=(
+        "Get current disk usage including total, used, free space, "
+        "and usage percentage."
+    ),
+)
 def get_disk():
-    """Get current disk usage of the server."""
     return system_get_disk()
 
 
 if __name__ == "__main__":
-    mcp.run()
+    server.run_stdio_async()
