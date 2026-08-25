@@ -126,4 +126,22 @@ TOOL_SCHEMAS = {
             "required": ["container"],
         },
     },
+
+    "get_error_log": {
+        "description": (
+            "Menampilkan isi file error.log dari project ESP32CAM/server/error.log "
+            "mengambil baris terakhir (seperti tail)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "lines": {
+                    "type": "integer",
+                    "description": (
+                        "Jumlah baris terakhir yang ingin ditampilkan (default 50)."
+                    ),
+                },
+            },
+        },
+    },
 }
