@@ -1,10 +1,6 @@
 import os
-import subprocess
-import time
 
-import psutil
-from dotenv import load_dotenv
-
+from security.auth import is_authorized
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -12,24 +8,25 @@ from telegram.ext import (
     ContextTypes,
 )
 
-load_dotenv()
+from tools.system import (
+    get_status,
+    get_memory,
+    get_disk,
+    format_bytes,
+    format_uptime,
+)
+
+from tools.docker import (
+    get_containers,
+    get_container_logs,
+)
+
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-
-ALLOWED_USER_IDS = {
-    int(user_id.strip())
-    for user_id in os.getenv("ALLOWED_USER_IDS", "").split(",")
-    if user_id.strip()
-}
-
 
 # ============================================================
 # SECURITY
 # ============================================================
-
-def is_authorized(user_id: int) -> bool:
-    return user_id in ALLOWED_USER_IDS
-
 
 async def unauthorized(update: Update):
     if update.message:
@@ -97,21 +94,27 @@ async def status(
         await unauthorized(update)
         return
 
-    cpu = psutil.cpu_percent(interval=1)
-    memory = psutil.virtual_memory()
-    disk = psutil.disk_usage("/")
-    uptime = int(time.time() - psutil.boot_time())
+    result = get_status()
+
+    if not result["success"]:
+        await update.message.reply_text(
+            "❌ Gagal membaca status server."
+        )
+        return
+
+    memory = result["memory"]
+    disk = result["disk"]
 
     await update.message.reply_text(
         "🖥️ *Server Status*\n\n"
-        f"CPU: `{cpu:.1f}%`\n"
-        f"RAM: `{format_bytes(memory.used)} / "
-        f"{format_bytes(memory.total)}` "
-        f"({memory.percent:.1f}%)\n"
-        f"Disk: `{format_bytes(disk.used)} / "
-        f"{format_bytes(disk.total)}` "
-        f"({disk.percent:.1f}%)\n"
-        f"Uptime: `{format_uptime(uptime)}`",
+        f"CPU: `{result['cpu_percent']:.1f}%`\n"
+        f"RAM: `{format_bytes(memory['used'])} / "
+        f"{format_bytes(memory['total'])}` "
+        f"({memory['percent']:.1f}%)\n"
+        f"Disk: `{format_bytes(disk['used'])} / "
+        f"{format_bytes(disk['total'])}` "
+        f"({disk['percent']:.1f}%)\n"
+        f"Uptime: `{format_uptime(result['uptime_seconds'])}`",
         parse_mode="Markdown",
     )
 
@@ -130,18 +133,26 @@ async def memory(
         await unauthorized(update)
         return
 
-    ram = psutil.virtual_memory()
-    swap = psutil.swap_memory()
+    result = get_memory()
+
+    if not result["success"]:
+        await update.message.reply_text(
+            "❌ Gagal membaca memory."
+        )
+        return
+
+    ram = result["ram"]
+    swap = result["swap"]
 
     await update.message.reply_text(
         "🧠 *Memory*\n\n"
-        f"RAM Total: `{format_bytes(ram.total)}`\n"
-        f"RAM Used: `{format_bytes(ram.used)}`\n"
-        f"RAM Available: `{format_bytes(ram.available)}`\n"
-        f"RAM Usage: `{ram.percent:.1f}%`\n\n"
-        f"Swap Total: `{format_bytes(swap.total)}`\n"
-        f"Swap Used: `{format_bytes(swap.used)}`\n"
-        f"Swap Usage: `{swap.percent:.1f}%`",
+        f"RAM Total: `{format_bytes(ram['total'])}`\n"
+        f"RAM Used: `{format_bytes(ram['used'])}`\n"
+        f"RAM Available: `{format_bytes(ram['available'])}`\n"
+        f"RAM Usage: `{ram['percent']:.1f}%`\n\n"
+        f"Swap Total: `{format_bytes(swap['total'])}`\n"
+        f"Swap Used: `{format_bytes(swap['used'])}`\n"
+        f"Swap Usage: `{swap['percent']:.1f}%`",
         parse_mode="Markdown",
     )
 
@@ -160,17 +171,22 @@ async def disk(
         await unauthorized(update)
         return
 
-    usage = psutil.disk_usage("/")
+    result = get_disk()
+
+    if not result["success"]:
+        await update.message.reply_text(
+            "❌ Gagal membaca disk."
+        )
+        return
 
     await update.message.reply_text(
         "💾 *Disk Usage*\n\n"
-        f"Total: `{format_bytes(usage.total)}`\n"
-        f"Used: `{format_bytes(usage.used)}`\n"
-        f"Free: `{format_bytes(usage.free)}`\n"
-        f"Usage: `{usage.percent:.1f}%`",
+        f"Total: `{format_bytes(result['total'])}`\n"
+        f"Used: `{format_bytes(result['used'])}`\n"
+        f"Free: `{format_bytes(result['free'])}`\n"
+        f"Usage: `{result['percent']:.1f}%`",
         parse_mode="Markdown",
     )
-
 
 # ============================================================
 # /docker
@@ -186,42 +202,31 @@ async def docker(
         await unauthorized(update)
         return
 
-    return_code, stdout, stderr = run_command(
-        [
-            "docker",
-            "ps",
-            "--format",
-            "{{.Names}}|{{.Status}}|{{.Image}}",
-        ]
-    )
+    result = get_containers()
 
-    if return_code != 0:
+    if not result["success"]:
         await update.message.reply_text(
-            f"❌ Docker error:\n`{stderr[:3000]}`",
+            f"❌ Docker error:\n"
+            f"`{result['stderr'][:3000]}`",
             parse_mode="Markdown",
         )
         return
 
-    if not stdout:
+    containers = result["containers"]
+
+    if not containers:
         await update.message.reply_text(
-            "🐳 Tidak ada container yang sedang berjalan."
+            "🐳 Tidak ada container."
         )
         return
 
     lines = ["🐳 *Docker Containers*\n"]
 
-    for line in stdout.splitlines():
-        parts = line.split("|", 2)
-
-        if len(parts) != 3:
-            continue
-
-        name, status, image = parts
-
+    for container in containers:
         lines.append(
-            f"• *{name}*\n"
-            f"  Status: `{status}`\n"
-            f"  Image: `{image}`"
+            f"• *{container['name']}*\n"
+            f"  Status: `{container['status']}`\n"
+            f"  Image: `{container['image']}`"
         )
 
     await update.message.reply_text(
@@ -233,15 +238,6 @@ async def docker(
 # ============================================================
 # /logs
 # ============================================================
-
-ALLOWED_CONTAINERS = {
-    "monitoring-nginx",
-    "monitoring-db",
-    "pitjarus-backend-dev",
-    "pitjarus-postgres-dev",
-    "pitjarus-nginx-dev",
-}
-
 
 async def logs(
     update: Update,
@@ -258,49 +254,31 @@ async def logs(
             "Gunakan:\n\n"
             "`/logs <container>`\n\n"
             "Contoh:\n"
-            "`/logs backend`",
+            "`/logs pitjarus-backend-dev`",
             parse_mode="Markdown",
         )
         return
 
     container = context.args[0]
 
-    if container not in ALLOWED_CONTAINERS:
-        await update.message.reply_text(
-            "⛔ Container tersebut tidak diizinkan."
-        )
-        return
-
-    return_code, stdout, stderr = run_command(
-        [
-            "docker",
-            "logs",
-            "--tail",
-            "30",
-            container,
-        ],
-        timeout=10,
+    result = get_container_logs(
+        container=container,
+        lines=30,
     )
 
-    if return_code != 0:
+    if not result["success"]:
         await update.message.reply_text(
-            f"Gagal mengambil log:\n`{stderr[:3000]}`",
-            parse_mode="Markdown",
+            f"❌ {result['error']}"
         )
         return
 
-    if not stdout:
-        stdout = "(Tidak ada log)"
-
-    # Telegram message memiliki batas ukuran.
-    stdout = stdout[-3500:]
+    logs_text = result["logs"] or "(Tidak ada log)"
 
     await update.message.reply_text(
         f"📋 *Logs: {container}*\n\n"
-        f"```text\n{stdout}\n```",
+        f"```text\n{logs_text[-3500:]}\n```",
         parse_mode="Markdown",
     )
-
 
 # ============================================================
 # MAIN
