@@ -1,5 +1,5 @@
 from security.gate import SecurityGate
-
+from tools.registry import execute_tool
 
 class ToolExecutor:
 
@@ -19,10 +19,6 @@ class ToolExecutor:
             arguments,
         )
 
-        # -----------------------------------------------
-        # Tool tidak diizinkan / tidak ditemukan
-        # -----------------------------------------------
-
         if not check["allowed"]:
 
             if check["requires_confirmation"]:
@@ -37,19 +33,17 @@ class ToolExecutor:
             return {
                 "status": "blocked",
                 "tool": tool_name,
+                "arguments": arguments,
                 "reason": check["reason"],
             }
 
-        # -----------------------------------------------
-        # LOW risk → execute
-        # -----------------------------------------------
 
-        result = self.gate.execute(
+        result = execute_tool(
             tool_name,
             arguments,
         )
 
-        if not result["success"]:
+        if not result.get("success", False):
             return {
                 "status": "error",
                 "tool": tool_name,
@@ -59,5 +53,5 @@ class ToolExecutor:
         return {
             "status": "success",
             "tool": tool_name,
-            "result": result["result"],
+            "result": result,
         }
