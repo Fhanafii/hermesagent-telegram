@@ -1,15 +1,23 @@
 import os
 
-from security.auth import is_authorized
-from telegram import Update
-from security.confirmation import ConfirmationManager
-from security.gate import SecurityGate
-from telegram.ext import CallbackQueryHandler
+from dotenv import load_dotenv
+
+from telegram import (
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+)
+
 from telegram.ext import (
     Application,
     CommandHandler,
+    CallbackQueryHandler,
     ContextTypes,
 )
+
+from security.auth import is_authorized
+from security.confirmation import ConfirmationManager
+from security.gate import SecurityGate
 
 from tools.system import (
     get_status,
@@ -24,15 +32,13 @@ from tools.docker import (
     get_container_logs,
 )
 
-from telegram import (
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-)
+
+load_dotenv()
+
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
 security_gate = SecurityGate()
 confirmation_manager = ConfirmationManager()
-
-BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
 # ============================================================
 # SECURITY
@@ -43,51 +49,6 @@ async def unauthorized(update: Update):
         await update.message.reply_text(
             "⛔ Kamu tidak memiliki akses ke Hermes."
         )
-
-
-# ============================================================
-# SERVER HELPERS
-# ============================================================
-
-def format_bytes(value: int) -> str:
-    units = ["B", "KB", "MB", "GB", "TB"]
-
-    size = float(value)
-
-    for unit in units:
-        if size < 1024:
-            return f"{size:.1f} {unit}"
-
-        size /= 1024
-
-    return f"{size:.1f} PB"
-
-
-def format_uptime(seconds: int) -> str:
-    days = seconds // 86400
-    hours = (seconds % 86400) // 3600
-    minutes = (seconds % 3600) // 60
-
-    return f"{days}d {hours}h {minutes}m"
-
-
-def run_command(command: list[str], timeout: int = 10):
-    try:
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False,
-        )
-
-        return result.returncode, result.stdout.strip(), result.stderr.strip()
-
-    except subprocess.TimeoutExpired:
-        return -1, "", "Command timeout"
-
-    except Exception as error:
-        return -1, "", str(error)
 
 
 # ============================================================
@@ -108,7 +69,9 @@ async def status(
 
     if not result["success"]:
         await update.message.reply_text(
-            "❌ Gagal membaca status server."
+            f"❌ Gagal membaca status server:\n"
+            f"`{result.get('error', 'Unknown error')}`",
+            parse_mode="Markdown",
         )
         return
 
@@ -147,7 +110,9 @@ async def memory(
 
     if not result["success"]:
         await update.message.reply_text(
-            "❌ Gagal membaca memory."
+            f"❌ Gagal membaca memory:\n"
+            f"`{result.get('error', 'Unknown error')}`",
+            parse_mode="Markdown",
         )
         return
 
@@ -185,7 +150,9 @@ async def disk(
 
     if not result["success"]:
         await update.message.reply_text(
-            "❌ Gagal membaca disk."
+            f"❌ Gagal membaca disk:\n"
+            f"`{result.get('error', 'Unknown error')}`",
+            parse_mode="Markdown",
         )
         return
 
@@ -540,7 +507,7 @@ def main():
     application.add_handler(
         CommandHandler("restart", restart)
     )
-    
+
     print("Hermes Telegram Bot started.")
 
     application.run_polling()
