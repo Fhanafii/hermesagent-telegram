@@ -1,8 +1,9 @@
 import secrets
 import time
+import token
 
 
-CONFIRMATION_TIMEOUT = 60
+CONFIRMATION_TIMEOUT = 120
 
 
 class ConfirmationManager:
@@ -57,12 +58,10 @@ class ConfirmationManager:
 
         return request
 
-    def cancel(
-        self,
-        token: str,
-    ) -> bool:
+    def cancel(self, token: str) -> bool:
+        request = self.get(token)
 
-        if token not in self.pending:
+        if request is None:
             return False
 
         del self.pending[token]

@@ -1,5 +1,5 @@
 import os
-
+from agent.executor import ToolExecutor
 from dotenv import load_dotenv
 
 from telegram import (
@@ -17,7 +17,6 @@ from telegram.ext import (
 
 from security.auth import is_authorized
 from security.confirmation import ConfirmationManager
-from security.gate import SecurityGate
 
 from tools.system import (
     get_status,
@@ -37,7 +36,7 @@ load_dotenv()
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
-security_gate = SecurityGate()
+tool_executor = ToolExecutor()
 confirmation_manager = ConfirmationManager()
 
 # ============================================================
@@ -232,46 +231,39 @@ async def restart(
 
     container = context.args[0]
 
-    check = security_gate.check(
+    result = tool_executor.execute(
         "restart_container",
         {
             "container": container,
         },
     )
 
-    if not check["allowed"]:
-        if check["requires_confirmation"]:
-            await request_confirmation(
-                update,
-                "restart_container",
-                {
-                    "container": container,
-                },
-            )
-            return
-
-        await update.message.reply_text(
-            f"⛔ {check['reason']}"
+    if result["status"] == "confirmation_required":
+        await request_confirmation(
+            update,
+            result["tool"],
+            result["arguments"],
+            result.get("risk"),
         )
         return
 
-    result = security_gate.execute(
-        "restart_container",
-        {
-            "container": container,
-        },
-    )
+    if result["status"] == "blocked":
+        await update.message.reply_text(
+            f"⛔ {result['reason']}"
+        )
+        return
 
-    if result["success"]:
+    if result["status"] == "success":
         await update.message.reply_text(
             "✅ Container berhasil direstart."
         )
-    else:
-        await update.message.reply_text(
-            f"❌ Gagal restart container:\n"
-            f"`{result}`",
-            parse_mode="Markdown",
-        )
+        return
+
+    await update.message.reply_text(
+        f"❌ Gagal restart container:\n"
+        f"`{result}`",
+        parse_mode="Markdown",
+    )
 # ============================================================
 # /logs
 # ============================================================
@@ -324,6 +316,7 @@ async def request_confirmation(
     update: Update,
     tool_name: str,
     arguments: dict,
+    risk: str | None = None,
 ):
     user = update.effective_user
 
@@ -349,22 +342,20 @@ async def request_confirmation(
         ]
     ]
 
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
     container = arguments.get(
         "container",
-        "-"
+        "-",
     )
 
     await update.message.reply_text(
         "⚠️ *Confirmation Required*\n\n"
         f"Tool: `{tool_name}`\n"
         f"Container: `{container}`\n"
-        "Risk: `HIGH`\n\n"
+        f"Risk: `{(risk or 'unknown').upper()}`\n\n"
         "Apakah kamu yakin ingin menjalankan "
         "operasi ini?",
         parse_mode="Markdown",
-        reply_markup=reply_markup,
+        reply_markup=InlineKeyboardMarkup(keyboard),
     )
 
 
@@ -434,9 +425,10 @@ async def confirmation_callback(
         )
         return
 
-    result = security_gate.execute(
+    result = tool_executor.execute(
         request["tool"],
         request["arguments"],
+        confirmed=True,
     )
 
     if result["success"]:

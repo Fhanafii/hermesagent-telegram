@@ -1,6 +1,7 @@
 from security.gate import SecurityGate
 from tools.registry import execute_tool
 
+
 class ToolExecutor:
 
     def __init__(self):
@@ -10,6 +11,7 @@ class ToolExecutor:
         self,
         tool_name: str,
         arguments: dict | None = None,
+        confirmed: bool = False,
     ) -> dict:
 
         arguments = arguments or {}
@@ -17,6 +19,7 @@ class ToolExecutor:
         check = self.gate.check(
             tool_name,
             arguments,
+            confirmed=confirmed,
         )
 
         if not check["allowed"]:
@@ -36,7 +39,6 @@ class ToolExecutor:
                 "arguments": arguments,
                 "reason": check["reason"],
             }
-
 
         result = execute_tool(
             tool_name,

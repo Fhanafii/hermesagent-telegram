@@ -56,5 +56,80 @@ def get_disk():
         {},
     )
 
+# Docker
+@server.tool(
+    name="get_docker_containers",
+    description=(
+        "List Docker containers currently running on the server, "
+        "including their names, status, and images."
+    ),
+)
+def get_docker_containers():
+    return executor.execute(
+        "get_docker_containers",
+        {},
+    )
+
+
+@server.tool(
+    name="get_container_logs",
+    description=(
+        "Get recent logs from a Docker container. "
+        "The container name must be provided."
+    ),
+)
+def get_container_logs(container: str):
+    return executor.execute(
+        "get_container_logs",
+        {
+            "container": container,
+        },
+    )
+
+#Docker Mutating Tools
+@server.tool(
+    name="start_container",
+    description=(
+        "Start a Docker container. "
+        "This operation requires user confirmation."
+    ),
+)
+def start_container(container: str):
+    return executor.execute(
+        "start_container",
+        {
+            "container": container,
+        },
+    )
+
+@server.tool(
+    name="stop_container",
+    description=(
+        "Stop a Docker container. "
+        "This operation requires user confirmation."
+    ),
+)
+def stop_container(container: str):
+    return executor.execute(
+        "stop_container",
+        {
+            "container": container,
+        },
+    )
+
+@server.tool(
+    name="restart_container",
+    description=(
+        "Restart a Docker container. "
+        "This operation requires user confirmation."
+    ),
+)
+def restart_container(container: str):
+    return executor.execute(
+        "restart_container",
+        {
+            "container": container,
+        },
+    )
 if __name__ == "__main__":
     asyncio.run(server.run_stdio_async())

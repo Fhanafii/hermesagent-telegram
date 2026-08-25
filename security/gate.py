@@ -9,6 +9,7 @@ class SecurityGate:
         self,
         tool_name: str,
         arguments: dict | None = None,
+        confirmed: bool = False,
     ) -> dict:
 
         arguments = arguments or {}
@@ -37,7 +38,7 @@ class SecurityGate:
             }
 
         # HIGH / confirmation
-        if policy["requires_confirmation"]:
+        if policy["requires_confirmation"] and not confirmed:
             return {
                 "allowed": False,
                 "requires_confirmation": True,
@@ -47,7 +48,7 @@ class SecurityGate:
                 "reason": "Confirmation required.",
             }
 
-        # LOW
+        # LOW atau sudah dikonfirmasi
         return {
             "allowed": True,
             "requires_confirmation": False,
