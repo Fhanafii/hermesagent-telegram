@@ -1,5 +1,7 @@
 from mcp.server import MCPServer
 
+import asyncio
+
 from tools.system import (
     get_status,
     get_memory as system_get_memory,
@@ -49,4 +51,4 @@ def get_disk():
 
 
 if __name__ == "__main__":
-    server.run_stdio_async()
+    asyncio.run(server.run_stdio_async())
