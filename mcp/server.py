@@ -131,5 +131,23 @@ def restart_container(container: str):
             "container": container,
         },
     )
+
+
+@server.tool(
+    name="get_error_log",
+    description=(
+        "Menampilkan log error dari ESP32CAM/server/error.log "
+        "dengan opsi jumlah baris (seperti tail)."
+    ),
+)
+def get_error_log(lines: int = 50):
+    return executor.execute(
+        "get_error_log",
+        {
+            "lines": lines,
+        },
+    )
+
+
 if __name__ == "__main__":
     asyncio.run(server.run_stdio_async())
