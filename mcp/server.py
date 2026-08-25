@@ -1,32 +1,33 @@
 from mcp.server import MCPServer
-
 import asyncio
 
-from tools.system import (
-    get_status,
-    get_memory as system_get_memory,
-    get_disk as system_get_disk,
-)
+from agent.executor import ToolExecutor
 
 
 server = MCPServer(
     name="Hermes Sysadmin",
     version="0.1.0",
     instructions=(
-        "Read-only server monitoring tools for the Hermes sysadmin agent."
+        "Sysadmin tools for the Hermes agent. "
+        "Read-only tools can be executed directly. "
+        "Mutating tools require security confirmation."
     ),
 )
 
+executor = ToolExecutor()
 
 @server.tool(
     name="get_server_status",
     description=(
-        "Get the current server status including CPU, RAM, disk usage, "
-        "and system uptime."
+        "Get the current server status including CPU, RAM, "
+        "disk usage, and system uptime."
     ),
 )
 def get_server_status():
-    return get_status()
+    return executor.execute(
+        "get_server_status",
+        {},
+    )
 
 
 @server.tool(
@@ -36,19 +37,24 @@ def get_server_status():
     ),
 )
 def get_memory():
-    return system_get_memory()
+    return executor.execute(
+        "get_memory",
+        {},
+    )
 
 
 @server.tool(
     name="get_disk",
     description=(
-        "Get current disk usage including total, used, free space, "
-        "and usage percentage."
+        "Get current disk usage including total, used, "
+        "free space, and usage percentage."
     ),
 )
 def get_disk():
-    return system_get_disk()
-
+    return executor.execute(
+        "get_disk",
+        {},
+    )
 
 if __name__ == "__main__":
     asyncio.run(server.run_stdio_async())
