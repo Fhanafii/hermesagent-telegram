@@ -1,241 +1,173 @@
-# Hermes Agent Telegram
+# Hermes Sysadmin Agent
 
-A Python-based Telegram bot implementation powered by Hermes Agent, providing intelligent conversational capabilities through Telegram messaging platform.
+A small Python sysadmin service for managing a server through Telegram and MCP. It is designed to be used as a tool provider for Hermes Agent, with Docker and host observability tools behind a security gate.
 
-## 🚀 Features
+## Project status
 
-- **Telegram Integration**: Seamless integration with Telegram Bot API
-- **AI-Powered Responses**: Leverages Hermes Agent for intelligent message processing
-- **Asynchronous Operation**: Built with async/await for efficient message handling
-- **Easy Configuration**: Simple setup and configuration process
-- **Extensible Architecture**: Easily add custom handlers and features
+This project is in active development.
 
-## 📋 Prerequisites
+The Telegram path can ask an authorized user to confirm high-risk Docker operations with inline buttons. The MCP path can correctly detect and refuse unconfirmed destructive operations, but the current Hermes MCP integration does not provide a way to route that confirmation request back through Telegram and resume the pending tool call. As a result, destructive MCP calls remain blocked until that integration issue is resolved.
 
-- Python 3.8 or higher
-- Telegram Bot API Token (from [@BotFather](https://t.me/botfather))
-- Hermes Agent dependencies
+Read-only MCP tools are usable directly.
 
-## 🔧 Installation
+## What it provides
 
-### 1. Clone the Repository
+- Server status: CPU, memory, disk, and uptime
+- Memory and swap usage
+- Disk usage
+- Running Docker containers
+- Recent Docker container logs
+- Server or ESP32CAM error log output
+- Docker container start, stop, and restart operations
+- Telegram user allowlisting with `ALLOWED_USER_IDS`
+- Risk-based tool policies and confirmation tokens
 
-```bash
+## Architecture
+
+```text
+Telegram -> bot.py -> ToolExecutor -> SecurityGate -> host / Docker
+
+Hermes Agent -> MCP stdio server -> ToolExecutor -> SecurityGate -> host / Docker
+                                      |
+                                      +-- low risk: execute
+                                      +-- high risk: confirmation_required
+```
+
+The shared `ToolExecutor` and `SecurityGate` ensure that tools are not executed merely because they are exposed through MCP. Every registered tool must also have a security policy.
+
+## Requirements
+
+- Python 3.12 or newer
+- A Linux server is recommended for the host metrics and Docker workflow
+- Docker, when using Docker tools
+- A Telegram bot token, when using the Telegram bot
+- The MCP server/runtime expected by the Hermes installation, when using MCP
+
+Runtime dependencies are currently not declared in `pyproject.toml`. Install the packages required by the selected entry point in your virtual environment, for example:
+
+```powershell
+python -m pip install python-dotenv psutil python-telegram-bot pytest
+```
+
+Install the MCP package/version supported by your Hermes setup separately. The MCP API used by this project is `MCPServer` with `run_stdio_async()`.
+
+## Installation
+
+```powershell
 git clone https://github.com/Fhanafii/hermesagent-telegram.git
-cd hermesagent-telegram
+Set-Location hermesagent-telegram
+
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install python-dotenv psutil python-telegram-bot pytest
 ```
 
-### 2. Create Virtual Environment (Recommended)
+On Linux or macOS, activate the environment with:
 
 ```bash
-python -m venv venv
-
-# On Windows
-venv\Scripts\activate
-
-# On macOS/Linux
-source venv/bin/activate
+source .venv/bin/activate
 ```
 
-### 3. Install Dependencies
+## Configuration
 
-```bash
-pip install -r requirements.txt
-```
-
-## ⚙️ Configuration
-
-### Setting Up Your Telegram Bot
-
-1. Open Telegram and chat with [@BotFather](https://t.me/botfather)
-2. Create a new bot using `/newbot` command
-3. Copy your Bot API Token
-
-### Environment Variables
-
-Create a `.env` file in the project root:
+Create a `.env` file in the project root. Do not commit it.
 
 ```env
-TELEGRAM_BOT_TOKEN=your_bot_token_here
-HERMES_API_KEY=your_hermes_api_key_here
-LOG_LEVEL=INFO
+TELEGRAM_BOT_TOKEN=replace_with_your_bot_token
+ALLOWED_USER_IDS=123456789,987654321
 ```
 
-## 🎯 Usage
+`ALLOWED_USER_IDS` is a comma-separated list of Telegram numeric user IDs. Users not in this list cannot use the Telegram bot. `HERMES_API_KEY` and `LOG_LEVEL` are not read by the current implementation.
 
-### Starting the Bot
+## Running the project
 
-```bash
-python main.py
+### Telegram bot
+
+The Telegram bot provides read-only commands and a confirmation flow for `/restart`:
+
+```powershell
+python bot.py
 ```
 
-### Command Examples
+Available commands:
 
-Once the bot is running, you can interact with it through Telegram:
+| Command | Purpose |
+| --- | --- |
+| `/start` | Show server status |
+| `/status` | Show CPU, memory, disk, and uptime |
+| `/memory` | Show RAM and swap usage |
+| `/disk` | Show disk usage |
+| `/docker` | List Docker containers |
+| `/logs <container>` | Show recent container logs |
+| `/restart <container>` | Request confirmation, then restart a container |
 
-- `/start` - Start the bot and receive welcome message
-- `/help` - Get help and available commands
-- `/info` - Get information about the bot
+### MCP server
 
-Send any message for the bot to process and respond intelligently using Hermes Agent.
+The MCP server communicates over stdio and is intended to be launched by an MCP client such as Hermes Agent:
 
-## 📁 Project Structure
-
+```powershell
+python -m mcp.server
 ```
+
+Configure the MCP client to launch that command from the repository directory. The exact configuration format depends on the Hermes version and MCP client being used.
+
+## Tool inventory
+
+| Tool | Risk | Confirmation |
+| --- | --- | --- |
+| `get_server_status` | Low | No |
+| `get_memory` | Low | No |
+| `get_disk` | Low | No |
+| `get_docker_containers` | Low | No |
+| `get_container_logs` | Low | No |
+| `get_error_log` | Low | No |
+| `start_container` | High | Yes |
+| `stop_container` | High | Yes |
+| `restart_container` | High | Yes |
+
+Unknown tools and tools without a policy are rejected. Tool failures are returned as structured error results instead of being allowed to crash the server.
+
+## Confirmation and security model
+
+1. A tool call is looked up in the registry.
+2. The tool must have a matching policy.
+3. Low-risk tools execute immediately.
+4. High-risk tools return `confirmation_required` unless `confirmed=True`.
+5. The Telegram bot creates a short-lived, user-bound confirmation token and displays Confirm and Cancel buttons.
+6. A confirmation token expires after 120 seconds and can only be consumed by the Telegram user who created it.
+
+The confirmation layer is an application-level safeguard, not a replacement for least-privilege OS permissions, Docker permissions, firewalling, backups, or server access controls.
+
+## Project structure
+
+```text
 hermesagent-telegram/
-├── main.py                 # Entry point of the application
-├── config.py              # Configuration settings
-├── handlers/              # Message handlers and command processors
-│   ├── __init__.py
-│   ├── message_handler.py # Main message processing
-│   └── command_handler.py # Command handling
-├── agents/                # Hermes Agent integration
-│   ├── __init__.py
-│   └── hermes_agent.py    # Agent logic
-├── utils/                 # Utility functions
-│   ├── __init__.py
-│   ├── logger.py          # Logging configuration
-│   └── helpers.py         # Helper functions
-├── requirements.txt       # Python dependencies
-├── .env.example          # Example environment variables
-└── README.md             # This file
+├── bot.py                 # Telegram entry point and confirmation callbacks
+├── agent/executor.py      # Shared tool execution and result statuses
+├── mcp/server.py          # MCP stdio tool server
+├── security/
+│   ├── auth.py            # Telegram user allowlist
+│   ├── confirmation.py   # Expiring Telegram confirmation tokens
+│   ├── gate.py            # Tool and policy enforcement
+│   └── policy.py          # Risk levels and confirmation policies
+├── tools/
+│   ├── docker.py          # Docker operations
+│   ├── log.py             # Error log reader
+│   ├── registry.py        # Tool registration and dispatch
+│   ├── schema.py          # Tool schemas
+│   └── system.py          # Host metrics
+├── tests/test_tools.py    # Registry, policy, and validation tests
+├── docs.MD                # Architecture notes
+└── pyproject.toml         # Package metadata
 ```
 
-## 🔌 Dependencies
+## Testing
 
-Key dependencies include:
+Run the current test suite with:
 
-- **python-telegram-bot**: Telegram Bot API wrapper
-- **python-dotenv**: Environment variable management
-- **aiohttp**: Asynchronous HTTP client
-- **pydantic**: Data validation using Python type annotations
-
-For complete list, see `requirements.txt`
-
-## 💬 Message Processing
-
-The bot processes messages in the following pipeline:
-
-1. **Receive**: Message arrives from Telegram
-2. **Parse**: Extract content and metadata
-3. **Agent Processing**: Hermes Agent analyzes and processes the message
-4. **Response Generation**: Generate appropriate response
-5. **Send**: Reply back to the user on Telegram
-
-## 🛠️ Development
-
-### Adding Custom Handlers
-
-Create new handler files in the `handlers/` directory:
-
-```python
-async def handle_custom_command(update, context):
-    """Custom command handler"""
-    message = update.message.text
-    # Process message
-    await update.message.reply_text("Response")
+```powershell
+python -m pytest
 ```
 
-### Extending the Agent
-
-Modify `agents/hermes_agent.py` to customize agent behavior:
-
-```python
-class CustomHermesAgent(HermesAgent):
-    async def process_message(self, message):
-        # Custom processing logic
-        return await super().process_message(message)
-```
-
-## 📝 Logging
-
-The application includes comprehensive logging. Configure logging level in `.env`:
-
-```env
-LOG_LEVEL=DEBUG  # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
-```
-
-Logs are output to both console and log file (if configured).
-
-## 🚨 Error Handling
-
-The bot includes robust error handling for:
-
-- Network failures
-- Invalid messages
-- API timeouts
-- Malformed requests
-
-Errors are logged and gracefully handled without crashing the bot.
-
-## 🔐 Security
-
-- **Token Security**: Never commit `.env` file with actual tokens
-- **Input Validation**: All user inputs are validated
-- **Rate Limiting**: Implements rate limiting to prevent abuse
-- **Error Messages**: Safe error messages that don't expose sensitive info
-
-## 📦 Building & Deployment
-
-### Local Testing
-
-```bash
-python main.py
-```
-
-### Deployment Options
-
-- **Local Server**: Run on your machine
-- **VPS/Cloud Server**: Deploy to AWS, Heroku, or similar services
-- **Docker**: Containerize the application for easy deployment
-
-#### Docker Deployment (Optional)
-
-```bash
-docker build -t hermesagent-telegram .
-docker run -d --env-file .env hermesagent-telegram
-```
-
-## 🤝 Contributing
-
-Contributions are welcome! Please follow these steps:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
-## 📄 License
-
-This project is open source and available under the MIT License - see the LICENSE file for details.
-
-## 📞 Support & Contact
-
-- **Issues**: Report bugs or request features via [GitHub Issues](https://github.com/Fhanafii/hermesagent-telegram/issues)
-- **Author**: [Fhanafii](https://github.com/Fhanafii)
-- **Repository**: [hermesagent-telegram](https://github.com/Fhanafii/hermesagent-telegram)
-
-## 🗺️ Roadmap
-
-- [ ] Advanced message filtering
-- [ ] User authentication system
-- [ ] Message history storage
-- [ ] Database integration
-- [ ] Web dashboard
-- [ ] Multi-language support
-- [ ] Performance optimizations
-
-## 📚 Additional Resources
-
-- [Telegram Bot API Documentation](https://core.telegram.org/bots/api)
-- [python-telegram-bot Documentation](https://python-telegram-bot.readthedocs.io/)
-- [Asyncio Documentation](https://docs.python.org/3/library/asyncio.html)
-
----
-
-**Last Updated**: August 2026
-
-**Status**: Active Development
-
-Feel free to reach out with questions or suggestions!
+The tests cover registration, schemas, confirmation policies, unknown tools, and invalid container access. Docker integration tests are not currently included.
