@@ -1,4 +1,6 @@
 from mcp.server import MCPServer
+from mcp.server.mcpserver.context import Context
+from pydantic import BaseModel, Field
 import asyncio
 
 from agent.executor import ToolExecutor
@@ -10,11 +12,18 @@ server = MCPServer(
     instructions=(
         "Sysadmin tools for the Hermes agent. "
         "Read-only tools can be executed directly. "
-        "Mutating tools require security confirmation."
+        "Mutating tools require security confirmation via MCP elicitation."
     ),
 )
 
 executor = ToolExecutor()
+
+
+class ConfirmSchema(BaseModel):
+    confirm: bool = Field(
+        description="Apakah Anda yakin ingin menjalankan operasi ini?"
+    )
+
 
 @server.tool(
     name="get_server_status",
@@ -56,7 +65,8 @@ def get_disk():
         {},
     )
 
-# Docker
+
+# Docker Read-Only Tools
 @server.tool(
     name="get_docker_containers",
     description=(
@@ -86,51 +96,87 @@ def get_container_logs(container: str):
         },
     )
 
-#Docker Mutating Tools
+
+# Docker Mutating Tools with MCP Elicitation Approval
 @server.tool(
     name="start_container",
     description=(
         "Start a Docker container. "
-        "This operation requires user confirmation."
+        "Requires user confirmation via MCP elicitation."
     ),
 )
-def start_container(container: str):
-    return executor.execute(
-        "start_container",
-        {
-            "container": container,
-        },
+async def start_container(container: str, ctx: Context):
+    result = await ctx.elicit(
+        message=f"Konfirmasi: Apakah Anda yakin ingin menjalankan (start) container '{container}'?",
+        schema=ConfirmSchema,
     )
+
+    if result.action == "accept" and result.data and result.data.confirm:
+        return executor.execute(
+            "start_container",
+            {"container": container},
+            confirmed=True,
+        )
+
+    return {
+        "status": "cancelled",
+        "success": False,
+        "message": f"Operasi start container '{container}' dibatalkan atau ditolak oleh pengguna.",
+    }
+
 
 @server.tool(
     name="stop_container",
     description=(
         "Stop a Docker container. "
-        "This operation requires user confirmation."
+        "Requires user confirmation via MCP elicitation."
     ),
 )
-def stop_container(container: str):
-    return executor.execute(
-        "stop_container",
-        {
-            "container": container,
-        },
+async def stop_container(container: str, ctx: Context):
+    result = await ctx.elicit(
+        message=f"Konfirmasi: Apakah Anda yakin ingin menghentikan (stop) container '{container}'?",
+        schema=ConfirmSchema,
     )
+
+    if result.action == "accept" and result.data and result.data.confirm:
+        return executor.execute(
+            "stop_container",
+            {"container": container},
+            confirmed=True,
+        )
+
+    return {
+        "status": "cancelled",
+        "success": False,
+        "message": f"Operasi stop container '{container}' dibatalkan atau ditolak oleh pengguna.",
+    }
+
 
 @server.tool(
     name="restart_container",
     description=(
         "Restart a Docker container. "
-        "This operation requires user confirmation."
+        "Requires user confirmation via MCP elicitation."
     ),
 )
-def restart_container(container: str):
-    return executor.execute(
-        "restart_container",
-        {
-            "container": container,
-        },
+async def restart_container(container: str, ctx: Context):
+    result = await ctx.elicit(
+        message=f"Konfirmasi: Apakah Anda yakin ingin me-restart container '{container}'?",
+        schema=ConfirmSchema,
     )
+
+    if result.action == "accept" and result.data and result.data.confirm:
+        return executor.execute(
+            "restart_container",
+            {"container": container},
+            confirmed=True,
+        )
+
+    return {
+        "status": "cancelled",
+        "success": False,
+        "message": f"Operasi restart container '{container}' dibatalkan atau ditolak oleh pengguna.",
+    }
 
 
 @server.tool(
